@@ -142,7 +142,13 @@ function drawTape(ctx, x, y, w, h, value, unit, step, format) {
     if (major) text(ctx, format(v), x + 6, dy, 12, COLORS.hudText);
   }
   ctx.restore();
-  // Current-value window.
+  // Current-value window: a light box the dark number sits in, so
+  // the pilot can actually read the speed and altitude. Before this
+  // the number was drawn dark-on-dark and was nearly invisible.
+  ctx.fillStyle = COLORS.hudLine;
+  ctx.beginPath();
+  ctx.roundRect(x + 6, cy - 12, w - 22, 24, 4);
+  ctx.fill();
   ctx.fillStyle = COLORS.hudLine;
   ctx.beginPath();
   ctx.moveTo(x + w, cy - 13);
@@ -150,7 +156,7 @@ function drawTape(ctx, x, y, w, h, value, unit, step, format) {
   ctx.lineTo(x + w, cy + 13);
   ctx.closePath();
   ctx.fill();
-  text(ctx, format(value), x + w / 2, cy, 15, '#06222e', 'center');
+  text(ctx, format(value), x + (w - 16) / 2, cy, 15, '#06222e', 'center');
   text(ctx, unit, x + w / 2, y - 10, 11, COLORS.hudText, 'center');
 }
 
@@ -178,8 +184,13 @@ export function drawHUD(ctx, state, time) {
   text(ctx, 'OBJECTIVE', 30, 32, 11 * s + 2, COLORS.hudAmber);
   text(ctx, objective, 30, 54, 14 * s + 2, COLORS.hudText);
   text(ctx, `SCORE ${score.toLocaleString('en-US')}`, 30, 76, 13 * s + 2, COLORS.hudGreen);
-  const distNm = Math.max(0, (state.runwayZ - plane.z) * NM_PER_UNIT);
-  text(ctx, `RWY 27 · ${distNm.toFixed(1)} NM`, 30 + ow - 16, 76, 12 * s + 2, COLORS.hudText, 'right');
+  // Distance to the next thing that matters: the next ring or gate
+  // while flying the course, the runway on the final leg.
+  const phase = state.phase || 'rings';
+  const nextLabel = phase === 'landing' ? 'RWY 27' : phase === 'gates' ? 'NEXT GATE' : 'NEXT RING';
+  const nextZ = state.nextZ ?? state.runwayZ;
+  const distNm = Math.max(0, (nextZ - plane.z) * NM_PER_UNIT);
+  text(ctx, `${nextLabel} · ${distNm.toFixed(1)} NM`, 30 + ow - 16, 76, 12 * s + 2, COLORS.hudText, 'right');
 
   // Fuel and throttle, top right.
   const bw = 170 * s;
