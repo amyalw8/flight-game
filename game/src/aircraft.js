@@ -22,6 +22,9 @@ export function createAircraft() {
     onGround: true,
     stalled: false,
     engineOut: false,
+    // Arrow-key hold time per key, seconds of full hold. A tap is a
+    // gentle nudge, holding builds to full authority (see stepAircraft).
+    keyHold: { bankLeft: 0, bankRight: 0, pitchUp: 0, pitchDown: 0 },
   };
 }
 
@@ -30,8 +33,26 @@ export function stepAircraft(plane, input, fuel, dt, course) {
   const mouse = input.mouse;
 
   // --- Controls: stick (arrows or mouse) and throttle (W/S). ---
-  let bankInput = (keys.bankRight ? 1 : 0) - (keys.bankLeft ? 1 : 0);
-  let pitchInput = (keys.pitchUp ? 1 : 0) - (keys.pitchDown ? 1 : 0);
+  // Arrow keys ramp: a tap is a gentle nudge, holding builds to full
+  // authority in about half a second. Binary keys at full bank used to
+  // swing the jet clean across the valley before they could reverse,
+  // so a keyboard-only pilot threaded only 3/6 rings and then died of
+  // fuel starvation in the gates leg — while mouse pilots landed near
+  // perfect. The mouse is already proportional and is untouched.
+  const hold = plane.keyHold;
+  const rampOf = (key) => {
+    // Every frame, held or not, so a released key decays back to a
+    // fresh tap instead of keeping its old hold time.
+    if (keys[key]) hold[key] = Math.min(1, hold[key] + dt * 2.2);
+    else hold[key] = Math.max(0, hold[key] - dt * 6);
+    return 0.25 + 0.75 * hold[key];
+  };
+  const rampR = rampOf('bankRight');
+  const rampL = rampOf('bankLeft');
+  const rampU = rampOf('pitchUp');
+  const rampD = rampOf('pitchDown');
+  let bankInput = (keys.bankRight ? rampR : 0) - (keys.bankLeft ? rampL : 0);
+  let pitchInput = (keys.pitchUp ? rampU : 0) - (keys.pitchDown ? rampD : 0);
   if (mouse.active) {
     bankInput += Math.max(-1, Math.min(1, mouse.x * 2.4));
     pitchInput += Math.max(-1, Math.min(1, mouse.y * 2.4));
