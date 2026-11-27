@@ -54,6 +54,26 @@ function freshRun() {
 
 let game = freshRun();
 
+// Best run, kept in the browser so there is a score to chase next
+// time. Local only, no network; a missing or blocked store just
+// means no best score is shown.
+let bestScore = 0;
+try {
+  bestScore = Number(window.localStorage.getItem('goldenHourBest') || 0) || 0;
+} catch (e) {
+  bestScore = 0;
+}
+function saveBest(score) {
+  if (score > bestScore) {
+    bestScore = score;
+    try {
+      window.localStorage.setItem('goldenHourBest', String(score));
+    } catch (e) {
+      // Storage blocked: the score still shows for this run.
+    }
+  }
+}
+
 function showMessage(text, seconds = 2.2) {
   game.message = text;
   game.messageUntil = game.time + seconds;
@@ -70,12 +90,14 @@ function startFlight() {
 
 function endFlightLanded() {
   game.mode = 'landed';
+  saveBest(game.sortie.score);
   statusLine.textContent = `Landed on runway 27. Score ${game.sortie.score}. Press Enter to fly again.`;
 }
 
 function endFlightCrashed(reason) {
   game.sortie.crashReason = reason;
   game.mode = 'crashed';
+  saveBest(game.sortie.score);
   audio.crash();
   statusLine.textContent = `Crashed: ${reason} Score ${game.sortie.score}. Press Enter to try again.`;
 }
@@ -121,6 +143,10 @@ function stepPlaying(dt) {
       audio.gate();
       game.fuel = Math.min(100, game.fuel + event.fuel);
       showMessage(`GATE  +${150}   ·   FUEL +${event.fuel}`);
+    } else if (event.type === 'bonus') {
+      audio.ring();
+      game.fuel = Math.min(100, game.fuel + event.fuel);
+      showMessage(`BONUS RING  +${400}   ·   FUEL +${event.fuel}`);
     } else if (event.type === 'ringMaster') {
       showMessage('RING MASTER  +500 — every ring threaded');
     } else if (event.type === 'phase') {
@@ -210,6 +236,11 @@ function drawTitle() {
   ctx.fillStyle = 'rgba(216, 246, 255, 0.9)';
   ctx.font = `${Math.round(15 * (width / 1280))}px 'Segoe UI', system-ui, sans-serif`;
   ctx.fillText('W / S throttle  ·  Arrow keys or mouse fly the jet  ·  G landing gear  ·  Space airbrake  ·  P pause  ·  M sound', width / 2, height * 0.66);
+  if (bestScore > 0) {
+    ctx.fillStyle = '#ffd98a';
+    ctx.font = `bold ${Math.round(18 * (width / 1280))}px 'Segoe UI', system-ui, sans-serif`;
+    ctx.fillText(`BEST RUN  ${bestScore.toLocaleString('en-US')}`, width / 2, height * 0.73);
+  }
   ctx.fillStyle = 'rgba(216, 246, 255, 0.55)';
   ctx.font = `${Math.round(13 * (width / 1280))}px 'Segoe UI', system-ui, sans-serif`;
   ctx.fillText('A complete original flight game — static files, no network, keyboard and mouse.', width / 2, height * 0.9);
@@ -237,9 +268,14 @@ function drawEndScreen() {
   ctx.fillStyle = '#ffd98a';
   ctx.font = `bold ${Math.round(30 * (width / 1280))}px 'Segoe UI', system-ui, sans-serif`;
   ctx.fillText(`SCORE  ${sortie.score.toLocaleString('en-US')}`, width / 2, height * 0.56);
+  if (bestScore > 0) {
+    ctx.fillStyle = '#d8f6ff';
+    ctx.font = `${Math.round(15 * (width / 1280))}px 'Segoe UI', system-ui, sans-serif`;
+    ctx.fillText(`BEST  ${bestScore.toLocaleString('en-US')}`, width / 2, height * 0.61);
+  }
   ctx.fillStyle = '#d8f6ff';
   ctx.font = `${Math.round(16 * (width / 1280))}px 'Segoe UI', system-ui, sans-serif`;
-  ctx.fillText(`Rings ${sortie.ringsHit}/${COURSE.ringCount}   ·   Gates ${sortie.gatesHit}/${COURSE.gateCount}`, width / 2, height * 0.63);
+  ctx.fillText(`Rings ${sortie.ringsHit}/${COURSE.ringCount}   ·   Gates ${sortie.gatesHit}/${COURSE.gateCount}   ·   Bonus ${sortie.bonusHit}/2`, width / 2, height * 0.68);
   ctx.fillStyle = '#39e6ff';
   ctx.font = `bold ${Math.round(20 * (width / 1280))}px 'Segoe UI', system-ui, sans-serif`;
   ctx.fillText('PRESS ENTER TO FLY AGAIN', width / 2, height * 0.74);
@@ -259,6 +295,13 @@ function drawPaused() {
 
 function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Distance to the next objective, for the HUD: the nearest ring or
+  // gate still ahead, or the runway on the final leg.
+  let nextZ = game.course.landingStartZ;
+  const ahead = [...game.course.rings, ...game.course.gates].filter((o) => !o.hit && o.z > game.plane.z);
+  if (game.sortie.phase !== 'landing' && ahead.length > 0) {
+    nextZ = Math.min(...ahead.map((o) => o.z));
+  }
   const state = {
     plane: game.plane,
     width,
@@ -269,6 +312,8 @@ function draw() {
     message: game.message,
     messageUntil: game.messageUntil,
     runwayZ: game.course.landingStartZ,
+    phase: game.sortie.phase,
+    nextZ,
     mode: game.mode,
   };
   renderScene(ctx, state, game.course, game.time);
@@ -280,8 +325,15 @@ function draw() {
 
 // Screenshot scenes: the same render path, a preset starting state.
 // ?scene=title | rings | landing | landed
+// The ?scene= parameter stages one frame for a screenshot: title,
+// rings, landing or landed. When it is set and the staged frame is
+// a live flight, the physics are frozen so the shot is exactly the
+// staged frame — otherwise the jet flies on during page load and
+// the framing depends on how fast the page happened to load.
+const stagedScene = new URLSearchParams(window.location.search).get('scene');
+
 function applyScene() {
-  const scene = new URLSearchParams(window.location.search).get('scene');
+  const scene = stagedScene;
   if (!scene) return;
   if (scene === 'title') {
     game.mode = 'title';
@@ -291,20 +343,26 @@ function applyScene() {
   if (scene === 'rings') {
     const ring = course.rings[2];
     game.mode = 'playing';
-    plane.z = ring.z - 60;
+    // The ring fills a good part of the frame with its beacon and
+    // label, and the valley is still visible around it. Exact,
+    // because the staged frame is frozen (see frame() below).
+    plane.z = ring.z - 35;
     plane.x = ring.x;
     plane.altitudeFt = ring.y * 50;
-    plane.speed = 265;
-    plane.throttle = 0.6;
+    plane.speed = 150;
+    plane.throttle = 0.45;
     plane.onGround = false;
     sortie.wasAirborne = true;
     game.fuel = 82;
   } else if (scene === 'landing') {
     game.mode = 'playing';
-    plane.z = course.landingStartZ - 1500;
+    // Short final: the runway wedge, threshold bars and PAPI lights
+    // read clearly, and the jet is still airborne. Exact, because
+    // the staged frame is frozen (see frame() below).
+    plane.z = course.landingStartZ - 30;
     plane.x = course.segmentAt(plane.z).centerX + 0.2;
-    plane.altitudeFt = 320;
-    plane.speed = 168;
+    plane.altitudeFt = 90;
+    plane.speed = 150;
     plane.throttle = 0.35;
     plane.gearDown = true;
     plane.onGround = false;
@@ -352,7 +410,11 @@ function frame(now) {
   // backwards off the course and kill the renderer, so clamp it.
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now;
-  step(dt);
+  // A staged screenshot frame does not fly: with ?scene=rings or
+  // ?scene=landing the jet holds the exact staged position, so the
+  // shot never depends on page-load timing. Normal play (no ?scene=)
+  // is unaffected.
+  if (!(stagedScene && game.mode === 'playing')) step(dt);
   draw();
   requestAnimationFrame(frame);
 }
