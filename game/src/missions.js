@@ -12,6 +12,7 @@ export function createSortie(course) {
     phase: 'rings',
     ringsHit: 0,
     gatesHit: 0,
+    bonusHit: 0,
     score: 0,
     landed: false,
     crashReason: null,
@@ -65,6 +66,23 @@ export function updateSortie(sortie, plane, prevZ, course, fuel) {
         events.push({ type: 'gate', fuel: PLANE.gateFuelBonus });
       } else {
         gate.passed = true;
+      }
+    }
+  }
+  // Gold bonus rings: off the racing line, worth more, and they never
+  // gate the phases — missing one costs nothing but the points.
+  for (const ring of course.bonusRings) {
+    if (ring.hit || ring.passed) continue;
+    if (crossed(prevZ, plane.z, ring.z)) {
+      const dx = plane.x - ring.x;
+      const dy = feetToUnits(plane.altitudeFt) - ring.y;
+      if (Math.hypot(dx, dy) <= ring.radius) {
+        ring.hit = true;
+        sortie.bonusHit++;
+        sortie.score += SCORE.bonusRing;
+        events.push({ type: 'bonus', fuel: PLANE.bonusRingFuel });
+      } else {
+        ring.passed = true;
       }
     }
   }
