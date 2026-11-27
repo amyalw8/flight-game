@@ -39,10 +39,17 @@ export const PLANE = {
   pitchRate: 0.55, // radians of pitch per second
   maxPitch: 0.42,
   fuelCapacity: 100,
-  fuelBurnCruise: 0.55, // units per second at half throttle
-  fuelBurnFull: 1.15, // units per second at full throttle
+  fuelBurnCruise: 0.32, // units per second at half throttle — the old
+  fuelBurnFull: 0.62, // 0.55/1.15 made the sortie unflyable on fuel:
+  // a good run at ~235 kt needs ~165 fuel for the 33,600 units to
+  // runway 27, but only 100 + 72 (rings) + 48 (gates) was ever
+  // available. Now a run that threads most rings finishes with
+  // fuel to spare, and a run that misses them runs dry in the
+  // gates leg — fuel still punishes sloppy flying, it just no
+  // longer punishes good flying too.
   ringFuelBonus: 12, // fuel a sky ring gives back
   gateFuelBonus: 6,
+  bonusRingFuel: 8, // fuel a gold bonus ring gives back
   gearDrag: 0.22, // flying with the gear down costs speed
   ceiling: 1500, // feet; the sky stops being useful above this
 };
@@ -50,6 +57,7 @@ export const PLANE = {
 export const SCORE = {
   ring: 250,
   gate: 150,
+  bonusRing: 400, // a gold ring off the racing line: risk for reward
   ringMasterBonus: 500, // all six rings threaded
   landingBase: 1000,
   centerlineBonus: 400, // touchdown within half a runway width
@@ -75,6 +83,9 @@ export const COLORS = {
   runwayDash: '#f4f1e6',
   ring: '#39e6ff',
   gate: '#ffb02e',
+  bonus: '#ffd24a',
+  papiRed: '#ff3b30',
+  papiWhite: '#fff6d8',
   jetBody: '#c8ccd4',
   jetBelly: '#8f959f',
   jetTrim: '#c22730',
