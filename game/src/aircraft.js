@@ -62,7 +62,13 @@ export function stepAircraft(plane, input, fuel, dt, course) {
   plane.pitch += (targetPitch - plane.pitch) * Math.min(1, dt * 4);
 
   // --- Stall: below stall speed the wing quits and the nose drops. ---
-  plane.stalled = !plane.onGround && plane.speed < PLANE.stallSpeed && plane.altitudeFt > 5;
+  // No altitude floor: a stalled jet at 3 ft must still sink the
+  // last few feet instead of hovering there forever (the climb rate
+  // is proportional to speed, so at ~0 kt nothing else brings it
+  // down). On the ground the jet never stalls (onGround is false
+  // only in the air), and a touchdown below 100 kt is already a
+  // crash by the landing rules, so this changes no fair landing.
+  plane.stalled = !plane.onGround && plane.speed < PLANE.stallSpeed;
   if (plane.stalled) {
     plane.pitch -= dt * 0.5;
     plane.pitch = Math.max(-0.5, plane.pitch);
@@ -70,13 +76,23 @@ export function stepAircraft(plane, input, fuel, dt, course) {
 
   // --- Motion: forward, turning with the bank, climbing with pitch. ---
   const worldSpeed = knotsToWorldSpeed(plane.speed);
-  plane.heading += -plane.bank * PLANE.turnRate * (plane.speed / PLANE.maxSpeed) * dt;
+  // Banking right turns the jet right: positive bank grows the
+  // heading, and a bigger heading moves the jet to +x. (This was
+  // backwards before: ArrowRight banked the jet left and flew it
+  // into the left mountains. The render parallax, the compass and
+  // the attitude ball were already built for this sign.)
+  plane.heading += plane.bank * PLANE.turnRate * (plane.speed / PLANE.maxSpeed) * dt;
   plane.x += Math.sin(plane.heading) * worldSpeed * dt;
   plane.z += Math.cos(plane.heading) * worldSpeed * dt;
 
   const climbRate = Math.sin(plane.pitch) * plane.speed * 1.55; // ft/s
-  plane.verticalSpeed = plane.onGround ? 0 : climbRate;
-  plane.altitudeFt += climbRate * dt;
+  // A stalled wing makes no lift: the jet sinks even with no forward
+  // speed. Without this the climb rate (proportional to speed) goes
+  // to zero as the speed does, and an engine-out jet hangs motionless
+  // in the sky instead of falling.
+  const sinkRate = plane.stalled ? 150 : 0; // ft/s
+  plane.verticalSpeed = plane.onGround ? 0 : climbRate - sinkRate;
+  plane.altitudeFt += (climbRate - sinkRate) * dt;
   if (plane.altitudeFt > PLANE.ceiling) {
     plane.altitudeFt = PLANE.ceiling;
     plane.pitch = Math.min(plane.pitch, 0);
@@ -121,7 +137,10 @@ export function drawAircraft(ctx, plane, width, height, time) {
 
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(-plane.bank * 0.9);
+  // Banking right dips the right wing: clockwise from behind, so
+  // the rotation takes the bank's sign as-is. (It was negated
+  // before, matching the old backwards turn.)
+  ctx.rotate(plane.bank * 0.9);
   ctx.scale(1, 1 - Math.abs(plane.pitch) * 0.25);
 
   // Engine glow, brighter with throttle.
@@ -134,6 +153,24 @@ export function drawAircraft(ctx, plane, width, height, time) {
   ctx.beginPath();
   ctx.arc(0, size * 0.34, size * 0.5, 0, Math.PI * 2);
   ctx.fill();
+
+  // Afterburner: a flickering flame cone out of the tail when the
+  // throttle is high and the jet is flying — speed you can see.
+  if (!plane.onGround && plane.throttle > 0.7) {
+    const flicker = 0.85 + Math.sin(time * 42) * 0.15;
+    const flameLen = size * (0.55 + plane.throttle * 0.55) * flicker;
+    const flame = ctx.createLinearGradient(0, size * 0.4, 0, size * 0.4 + flameLen);
+    flame.addColorStop(0, 'rgba(255, 240, 170, 0.95)');
+    flame.addColorStop(0.45, 'rgba(255, 150, 50, 0.85)');
+    flame.addColorStop(1, 'rgba(255, 80, 20, 0)');
+    ctx.fillStyle = flame;
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.09, size * 0.4);
+    ctx.lineTo(size * 0.09, size * 0.4);
+    ctx.lineTo(0, size * 0.4 + flameLen);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   // Wings: swept back, red tips, grey tops.
   ctx.fillStyle = COLORS.jetBody;
