@@ -73,9 +73,45 @@ function buildSegments() {
               return { x: side * (2.6 + hash(i * 41 + slot) * 5.2), size: 0.7 + hash(i * 17 + slot) * 0.9 };
             })
             .filter(Boolean),
+      // Farmsteads and hay bales: a red-roofed barn here, a bale there,
+      // so the fields read as worked land instead of flat colour.
+      farm:
+        !isRunway && hash(i * 19 + 3) > 0.93
+          ? { x: (hash(i * 23 + 7) > 0.5 ? 1 : -1) * (3.4 + hash(i * 31 + 2) * 4.2), size: 0.8 + hash(i * 37 + 5) * 0.5 }
+          : null,
+      bales:
+        !isRunway && hash(i * 43 + 11) > 0.86
+          ? [{ x: (hash(i * 47 + 1) > 0.5 ? 1 : -1) * (2.8 + hash(i * 53 + 4) * 4.6), size: 0.5 + hash(i * 59 + 8) * 0.4 }]
+          : [],
     });
   }
   return segments;
+}
+
+// Gold bonus rings: two of them, set wide of the racing line and at
+// an awkward height, so threading one is a deliberate detour for
+// 400 points and fuel — risk for reward, never on the main path.
+function placeBonusRings(segments) {
+  const rings = [];
+  const spots = [
+    { frac: 0.3, side: -1, alt: 760 },
+    { frac: 0.72, side: 1, alt: 520 },
+  ];
+  for (let n = 0; n < spots.length; n++) {
+    const s = spots[n];
+    const segIndex = Math.round(COURSE.ringZoneStart + (COURSE.ringZoneEnd - COURSE.ringZoneStart) * s.frac);
+    const seg = segments[segIndex];
+    rings.push({
+      kind: 'bonus',
+      z: segIndex * VIEW.segmentLength,
+      x: seg.centerX + s.side * 5.6,
+      y: feetToUnits(s.alt + hash(n * 71 + 13) * 160),
+      radius: 2.2,
+      hit: false,
+      index: n,
+    });
+  }
+  return rings;
 }
 
 function placeRings(segments) {
@@ -122,6 +158,7 @@ export function createCourse() {
     segments,
     rings: placeRings(segments),
     gates: placeGates(segments),
+    bonusRings: placeBonusRings(segments),
     totalLength: COURSE.totalSegments * VIEW.segmentLength,
     landingStartZ: COURSE.landingRunwayStart * VIEW.segmentLength,
     landingEndZ: COURSE.landingRunwayEnd * VIEW.segmentLength,
